@@ -1,0 +1,5 @@
+Flask==2.3.3
+requests==2.31.0
+edge-tts==6.1.9
+asyncio
+logging
