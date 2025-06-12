@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI语音助手</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 左侧面板 - Live2D区域 -->
+        <aside class="left-panel">
+            <div class="left-panel-header">
+                <h3>虚拟伙伴</h3>
+                <button id="toggleLeftPanel" class="toggle-btn" title="折叠/展开">◀</button>
+            </div>
+            
+            <div class="live2d-container">
+                <div class="live2d-placeholder">
+                    <div class="avatar-circle">
+                        <span class="avatar-icon">🤖</span>
+                    </div>
+                    <p>Live2D模型加载中...</p>
+                </div>
+            </div>
+            
+            <!-- 状态指示器 -->
+            <div class="status-indicators">
+                <div class="status-item">
+                    <span class="status-dot" id="asrStatus"></span>
+                    <span>语音识别</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-dot" id="llmStatus"></span>
+                    <span>AI处理</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-dot" id="ttsStatus"></span>
+                    <span>语音合成</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 中间主要内容区域 - 聊天区域 -->
+        <main class="main-panel">
+            <div class="main-header">
+                <h1>AI语音助手</h1>
+                <div class="main-header-controls">
+                    <button id="clearHistoryBtn" class="icon-btn" title="清空历史">🗑️</button>
+                </div>
+            </div>
+            
+            <div class="chat-container" id="chatContainer">
+                <div class="welcome-message">
+                    <p>👋 你好！我是您的AI语音助手，有什么可以帮助您的吗？</p>
+                </div>
+            </div>
+            
+            <!-- 输入区域 -->
+            <div class="input-section">
+                <div class="input-container">
+                    <textarea 
+                        id="textInput" 
+                        placeholder="输入您的问题，支持多行文本..."
+                        rows="1"></textarea>
+                    <button id="sendBtn" class="send-btn">发送</button>
+                    <button id="recordBtn" class="record-btn">🎤</button>
+                </div>
+                <div class="recording-indicator" id="recordingIndicator">
+                    <span class="pulse"></span>
+                    <span>正在录音...</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- 右侧面板 - 历史记录和设置 -->
+        <aside class="right-panel" id="rightPanel">
+            <div class="right-panel-header">
+                <h3>控制面板</h3>
+                <button id="toggleRightPanel" class="toggle-btn" title="折叠/展开">▶</button>
+            </div>
+            
+            <div class="right-panel-content">
+                <!-- 标签页导航 -->
+                <div class="tab-navigation">
+                    <button class="tab-btn active" data-tab="history">历史记录</button>
+                    <button class="tab-btn" data-tab="settings">设置</button>
+                </div>
+                
+                <!-- 历史记录标签页 -->
+                <div class="tab-content active" id="historyTab">
+                    <div class="history-section">
+                        <div class="history-header">
+                            <h4>对话历史</h4>
+                            <div class="history-controls">
+                                <button id="newConversationBtn" class="small-btn" title="新对话">➕</button>
+                                <button id="exportHistoryBtn" class="small-btn" title="导出历史">📤</button>
+                            </div>
+                        </div>
+                        <div class="history-list" id="historyList">
+                            <div class="history-item">
+                                <div class="history-header">
+                                    <div class="history-time">今天 14:30</div>
+                                </div>
+                                <div class="history-preview">新对话</div>
+                                <div class="history-meta">0 条消息</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 设置标签页 -->
+                <div class="tab-content" id="settingsTab">
+                    <div class="settings-section">
+                        <!-- LLM设置 -->
+                        <div class="setting-group">
+                            <div class="group-header" onclick="toggleGroup('llmGroup')">
+                                <span>🧠 大语言模型设置</span>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                            <div id="llmGroup" class="group-content">
+                                <div class="setting-item">
+                                    <label>模型提供商:</label>
+                                    <select id="llmProvider">
+                                        <option value="deepseek">DeepSeek (华为云MaaS)</option>
+                                        <option value="kimi">Kimi (月之暗面)</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item">
+                                    <label>API Key:</label>
+                                    <input type="password" id="apiKey" placeholder="输入API Key">
+                                </div>
+                                <div class="setting-item">
+                                    <label>模型名称:</label>
+                                    <select id="modelName">
+                                        <option value="DeepSeek-V3">DeepSeek-V3</option>
+                                        <option value="moonshot-v1-8k">moonshot-v1-8k</option>
+                                        <option value="moonshot-v1-32k">moonshot-v1-32k</option>
+                                        <option value="moonshot-v1-128k">moonshot-v1-128k</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item">
+                                    <label>Temperature:</label>
+                                    <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.6">
+                                    <span id="temperatureValue">0.6</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- TTS设置 -->
+                        <div class="setting-group">
+                            <div class="group-header" onclick="toggleGroup('ttsGroup')">
+                                <span>🔊 语音合成设置</span>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                            <div id="ttsGroup" class="group-content">
+                                <div class="setting-item">
+                                    <label>语音引擎:</label>
+                                    <select id="ttsEngine">
+                                        <option value="edge">Edge TTS</option>
+                                        <option value="azure">Azure TTS</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item">
+                                    <label>声音:</label>
+                                    <select id="voiceSelect">
+                                        <option value="zh-CN-XiaoxiaoNeural">晓晓 (女声)</option>
+                                        <option value="zh-CN-YunxiNeural">云希 (男声)</option>
+                                        <option value="zh-CN-YunyangNeural">云扬 (男声)</option>
+                                        <option value="zh-CN-XiaoyiNeural">晓伊 (女声)</option>
+                                        <option value="zh-CN-YunjianNeural">云健 (男声)</option>
+                                        <option value="zh-CN-XiaochenNeural">晓辰 (女声)</option>
+                                        <option value="zh-CN-XiaohanNeural">晓涵 (女声)</option>
+                                        <option value="zh-CN-XiaomengNeural">晓梦 (女声)</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item">
+                                    <label>语速:</label>
+                                    <input type="range" id="speechRate" min="0.5" max="2" step="0.1" value="1.0">
+                                    <span id="rateValue">1.0</span>
+                                </div>
+                                <div class="setting-item">
+                                    <label>音量:</label>
+                                    <input type="range" id="speechVolume" min="0.5" max="1.5" step="0.1" value="1.0">
+                                    <span id="volumeValue">1.0</span>
+                                </div>
+                                <div class="setting-item">
+                                    <label>启用TTS:</label>
+                                    <input type="checkbox" id="enableTTS" checked>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ASR设置 -->
+                        <div class="setting-group">
+                            <div class="group-header" onclick="toggleGroup('asrGroup')">
+                                <span>🎤 语音识别设置</span>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                            <div id="asrGroup" class="group-content">
+                                <div class="setting-item">
+                                    <label>识别引擎:</label>
+                                    <select id="asrEngine">
+                                        <option value="browser">浏览器内置</option>
+                                        <option value="whisper">Whisper</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item">
+                                    <label>语言:</label>
+                                    <select id="asrLanguage">
+                                        <option value="zh-CN">中文</option>
+                                        <option value="en-US">英语</option>
+                                    </select>
+                                </div>
+                                <div class="setting-item">
+                                    <label>灵敏度:</label>
+                                    <input type="range" id="asrSensitivity" min="1" max="10" step="1" value="5">
+                                    <span id="sensitivityValue">5</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-footer">
+                            <button id="saveSettingsBtn" class="save-btn">保存设置</button>
+                            <button id="resetSettingsBtn" class="reset-btn">重置</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 加载指示器 -->
+    <div id="loadingIndicator" class="loading-indicator">
+        <div class="spinner"></div>
+        <span>处理中...</span>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
