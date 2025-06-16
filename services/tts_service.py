@@ -93,38 +93,57 @@ class TTSService:
     async def _generate_edge_tts(self, text: str, voice: str, rate: float, 
                                volume: float, **kwargs) -> str:
         """使用Edge TTS生成语音"""
-        try:
-            # 清理文本，移除可能的冗余信息
-            cleaned_text = self._clean_text_for_tts(text)
-            
-            # 处理语速参数：转换为百分比格式，带正负号
-            rate_percent = int((rate - 1) * 100)
-            rate_str = f"{rate_percent:+d}%"  # 强制显示正负号
-            
-            # 处理音量参数：转换为相对百分比格式，带正负号
-            # volume范围是0.0-1.0，需要转换为相对于默认音量的百分比
-            volume_percent = int((volume - 1) * 100)
-            volume_str = f"{volume_percent:+d}%"  # 强制显示正负号
-            
-            logger.debug(f"Edge TTS参数: rate={rate_str}, volume={volume_str}")
-            
-            # 创建Communicate对象
-            communicate = edge_tts.Communicate(cleaned_text, voice, rate=rate_str, volume=volume_str)
-            
-            # 创建临时文件
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
-            temp_path = temp_file.name
-            temp_file.close()
-            
-            # 保存音频
-            await communicate.save(temp_path)
-            
-            logger.info(f"Edge TTS生成成功: {len(cleaned_text)} 字符, 文件大小: {os.path.getsize(temp_path)} bytes")
-            return temp_path
-            
-        except Exception as e:
-            logger.error(f"Edge TTS生成失败: {str(e)}")
-            raise
+        max_retries = 2
+        last_exception = None
+
+        for attempt in range(max_retries):
+            temp_path = None
+            try:
+                # 清理文本，移除可能的冗余信息
+                cleaned_text = self._clean_text_for_tts(text)
+                if not cleaned_text:
+                    logger.warning("清理后的TTS文本为空，跳过语音合成。")
+                    return "" # 返回空字符串，表示没有生成音频，但不算作错误
+
+                # 处理语速和音量参数
+                rate_percent = int((rate - 1) * 100)
+                rate_str = f"{rate_percent:+d}%"
+                volume_percent = int((volume - 1) * 100)
+                volume_str = f"{volume_percent:+d}%"
+
+                logger.debug(f"Edge TTS尝试 {attempt + 1}/{max_retries}: voice={voice}, rate={rate_str}, volume={volume_str}")
+                
+                communicate = edge_tts.Communicate(cleaned_text, voice, rate=rate_str, volume=volume_str)
+                
+                # 创建临时文件
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+                temp_path = temp_file.name
+                temp_file.close()
+                
+                # 保存音频
+                await communicate.save(temp_path)
+                
+                # 检查文件大小
+                file_size = os.path.getsize(temp_path)
+                if file_size == 0:
+                    raise ValueError("生成的TTS文件大小为0，可能合成失败。")
+                
+                logger.info(f"Edge TTS生成成功: {len(cleaned_text)} 字符, 文件大小: {file_size} bytes")
+                return temp_path
+                
+            except Exception as e:
+                last_exception = e
+                logger.error(f"Edge TTS生成尝试 {attempt + 1}/{max_retries} 失败: {str(e)}")
+                # 清理失败时可能创建的临时文件
+                if temp_path and os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                # 如果不是最后一次尝试，则稍作等待
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+        
+        # 所有重试都失败后，记录并重新抛出最后的异常
+        logger.critical(f"Edge TTS 语音合成最终失败，请检查网络连接和依赖项。")
+        raise last_exception
     
     async def _generate_azure_tts(self, text: str, voice: str, rate: float, 
                                 volume: float, **kwargs) -> str:
@@ -139,45 +158,23 @@ class TTSService:
         if not text:
             return ""
         
-        # 保存原始文本用于调试
         original_text = text
-        
-        # 只移除明显的技术内容，保留正常的对话文本
-        
-        # 移除完整的URL链接
         text = re.sub(r'https?://[^\s]+', '', text)
-        
-        # 移除邮箱地址
         text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '', text)
-        
-        # 移除明显的文件路径（完整路径）
-        text = re.sub(r'[A-Za-z]:\\[^\s]*', '', text)
-        
-        # 移除很长的随机字符串（超过30个字符的连续字母数字）
+        text = re.sub(r'[A-Za-z]:\$^\s]*', '', text)
         text = re.sub(r'\b[A-Za-z0-9]{30,}\b', '', text)
-        
-        # 移除明显的配置参数（等号格式）
         text = re.sub(r'\b\w+=[^\s]+', '', text)
-        
-        # 移除HTML/XML标签
         text = re.sub(r'<[^>]+>', '', text)
-        
-        # 移除代码块标记，但保留内容
         text = re.sub(r'```[\w]*\n?', '', text)
-        text = re.sub(r'`([^`]*)`', r'\1', text)  # 保留内容，只移除反引号
-        
-        # 清理多余的空白字符
+        text = re.sub(r'`([^`]*)`', r'\1', text)
         text = re.sub(r'\s+', ' ', text)
         text = text.strip()
         
-        # 如果清理后文本太短或为空，返回原文本的前100个字符
         if len(text) < 5:
-            # 简单清理原文本，只移除明显的技术标记
-            fallback_text = re.sub(r'[`<>{}[\]]+', '', original_text)
+            fallback_text = re.sub(r'[`<>{}[$]+', '', original_text)
             fallback_text = re.sub(r'\s+', ' ', fallback_text).strip()
             text = fallback_text[:100] if len(fallback_text) > 0 else "处理完成"
         
-        # 限制长度
         if len(text) > 200:
             text = text[:200] + "..."
         
@@ -204,7 +201,6 @@ class TTSService:
             validation_result['valid'] = False
             validation_result['errors'].append("语速必须在0.5-2.0之间")
         
-        # 更新音量范围验证
         if not (0.5 <= volume <= 1.5):
             validation_result['valid'] = False
             validation_result['errors'].append("音量必须在0.5-1.5之间")
@@ -214,3 +210,4 @@ class TTSService:
     def preview_tts_text(self, text: str) -> str:
         """预览将要合成的文本（已清理）"""
         return self._clean_text_for_tts(text)
+

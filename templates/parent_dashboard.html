@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>家长模式</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="parent-dashboard-container">
+        <h2>家长模式已开启</h2>
+        <form method="post" action="/set_time_limit" style="margin-top:18px;">
+            <label for="time_limit">每日使用时长限制（分钟）：</label>
+            <input type="number" id="time_limit" name="time_limit" min="1" max="600" step="1" required>
+            <button type="submit" class="save-btn">保存</button>
+        </form>
+        {% if time_limit %}
+        <div class="current-info">当前限制：{{ time_limit }} 分钟/天</div>
+        {% endif %}
+        <form method="post" action="/set_sensitive_words" style="margin-top:18px;">
+            <label for="sensitive_words">敏感词设置（用逗号分隔）：</label>
+            <input type="text" id="sensitive_words" name="sensitive_words" value="{% if sensitive_words %}{{ sensitive_words|join(',') }}{% endif %}">
+            <button type="submit" class="save-btn">保存</button>
+        </form>
+        {% if sensitive_words %}
+        <div class="current-words">当前敏感词：{{ sensitive_words|join(', ') }}</div>
+        {% endif %}
+        <a href="/sensitive_log" class="save-btn" style="margin-top:28px;">查看敏感词触发记录</a>
+        <a href="/" style="margin-top:10px;background:linear-gradient(90deg,#f1f5f9 60%,#e0e7ff 100%);color:var(--primary-color);">退出家长模式</a>
+    </div>
+</body>
+</html>

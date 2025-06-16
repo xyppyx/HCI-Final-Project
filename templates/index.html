@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>儿童陪伴ai语音助手</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <title>儿童伙伴ai助手</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- 在HTML的head部分添加 -->
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 </head>
 <body>
     <div class="app-container">
@@ -16,12 +18,8 @@
             </div>
             
             <div class="live2d-container">
-                <div class="live2d-placeholder">
-                    <div class="avatar-circle">
-                        <span class="avatar-icon">🤖</span>
-                    </div>
-                    <p>Live2D模型加载中...</p>
-                </div>
+                <!-- Live2D画布 -->
+                <canvas id="live2d-canvas"></canvas>
             </div>
             
             <!-- 状态指示器 -->
@@ -44,11 +42,18 @@
         <!-- 中间主要内容区域 - 聊天区域 -->
         <main class="main-panel">
             <div class="main-header">
-                <h1>AI语音助手</h1>
+                <h1>儿童伙伴ai助手</h1>
                 <div class="main-header-controls">
                     <button id="clearHistoryBtn" class="icon-btn" title="清空历史">🗑️</button>
+                    <a href="/parent_login" id="parentModeBtn" class="icon-btn" title="家长模式" style="margin-left: 10px;">家长模式</a>
+                    <button id="usageGuideBtn" class="icon-btn" style="margin-left: 10px;">系统使用说明</button>
                 </div>
             </div>
+            {% if remaining_minutes is not none %}
+            <div class="time-remaining-info" style="margin: 0 0 18px 0; text-align: right; color: var(--primary-color); font-size: 1.08rem;">
+                今日剩余可用时长：<span id="remainingTime">{{ remaining_minutes }}</span> 分钟
+            </div>
+            {% endif %}
             
             <div class="chat-container" id="chatContainer">
                 <div class="welcome-message">
@@ -112,6 +117,26 @@
                 <!-- 设置标签页 -->
                 <div class="tab-content" id="settingsTab">
                     <div class="settings-section">
+    <!-- ==================== 新增 Live2D 模型设置 ==================== -->
+                    <div class="setting-group">
+                        <div class="group-header" onclick="toggleGroup('live2dSettingsGroup')">
+                            <span>Live2D 模型设置</span>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="group-content" id="live2dSettingsGroup">
+                            <div class="setting-item">
+                                <label for="live2dModelSelect">选择模型</label>
+                                <select id="live2dModelSelect" name="live2dModelPath"></select>
+                            </div>
+                            <!-- 静态动作按钮菜单 -->
+                            <div class="live2d-actions" style="margin-top:10px;">
+                                <button class="action-btn" data-motion="wave">挥手</button>
+                                <button class="action-btn" data-motion="blink">眨眼</button>
+                                <button class="action-btn" data-motion="nod">点头</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- ============================================================= -->
                         <!-- LLM设置 -->
                         <div class="setting-group">
                             <div class="group-header" onclick="toggleGroup('llmGroup')">
@@ -220,6 +245,24 @@
                             </div>
                         </div>
                         
+                        <!-- 夜间/护眼模式设置 -->
+                        <div class="setting-group">
+                            <div class="group-header" onclick="toggleGroup('themeGroup')">
+                                <span>🌙 夜间/护眼模式</span>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                            <div id="themeGroup" class="group-content">
+                                <div class="setting-item">
+                                    <label for="themeSelect">主题模式：</label>
+                                    <select id="themeSelect">
+                                        <option value="light">明亮模式</option>
+                                        <option value="dark">夜间模式</option>
+                                        <option value="eye">护眼模式</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <div class="settings-footer">
                             <button id="saveSettingsBtn" class="save-btn">保存设置</button>
                             <button id="resetSettingsBtn" class="reset-btn">重置</button>
@@ -230,12 +273,54 @@
         </aside>
     </div>
 
-    <!-- 加载指示器 -->
+   <!-- 加载指示器 -->
     <div id="loadingIndicator" class="loading-indicator">
         <div class="spinner"></div>
         <span>处理中...</span>
     </div>
 
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <!-- Live2D 核心库 -->
+    <!-- 顺序很重要: Core -> Pixi -> Live2D Plugin -->
+    <script src="/static/live2d_core/live2dcubismcore.min.js"></script>
+    <script src="/static/live2d_core/pixi.min.js"></script>
+    <script src="/static/live2d_core/cubism4.min.js"></script>
+    
+    <!-- 主逻辑脚本 (也添加 defer 属性) -->
+    <script src="/static/js/main.js" defer></script>
+    <script src="/static/js/time_countdown.js"></script>
+    <script src="/static/js/theme_switch.js"></script>
+   
+   <!-- 系统使用说明弹窗脚本 -->
+   <script>
+        document.getElementById('usageGuideBtn').onclick = function() {
+            document.getElementById('usageGuideModal').style.display = 'flex';
+        }
+    </script>
+
+    <!-- 系统使用说明弹窗 -->
+    <div id="usageGuideModal" class="modal" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(40,48,80,0.18);backdrop-filter:blur(2px);align-items:center;justify-content:center;">
+        <div style="background:#fff;border-radius:18px;max-width:480px;width:90vw;padding:36px 28px 28px 28px;box-shadow:0 8px 32px 0 rgba(99,102,241,0.13);position:relative;">
+            <button onclick="document.getElementById('usageGuideModal').style.display='none'" style="position:absolute;top:12px;right:18px;font-size:1.3rem;background:none;border:none;color:#64748b;cursor:pointer;">✖</button>
+            <h2 style="color:#6366f1;font-size:1.4rem;margin-bottom:18px;text-align:center;">系统使用说明</h2>
+            <div style="margin-bottom:18px;">
+                <strong style="color:#4f46e5;">给儿童：</strong>
+                <ul style="margin:8px 0 12px 18px;text-align:left;color:#374151;font-size:1.05rem;">
+                    <li>1. 请在家长允许下使用本系统，遇到不懂的内容可随时询问家长。</li>
+                    <li>2. 不要在系统中输入或透露真实姓名、住址、联系方式等个人隐私信息。</li>
+                    <li>3. 如果遇到系统无法回答的问题，请不要灰心，可以和家长一起查找答案。</li>
+                    <li>4. 请合理安排使用时间，保护视力和健康。</li>
+                </ul>
+            </div>
+            <div>
+                <strong style="color:#4f46e5;">给家长：</strong>
+                <ul style="margin:8px 0 0 18px;text-align:left;color:#374151;font-size:1.05rem;">
+                    <li>1. 建议陪伴孩子一起使用，关注孩子的提问内容和AI的回答。</li>
+                    <li>2. 可通过“家长模式”设置每日使用时长、敏感词、查看敏感词触发记录等。</li>
+                    <li>3. 如发现不适宜内容，请及时反馈并引导孩子正确使用。</li>
+                    <li>4. 请定期与孩子沟通网络安全和健康使用习惯。</li>
+                </ul>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

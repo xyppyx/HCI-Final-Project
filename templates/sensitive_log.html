@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>敏感词触发记录</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="parent-dashboard-container">
+        <h2>敏感词触发记录</h2>
+        <a href="/parent_dashboard" style="float:right;font-size:1rem;">返回家长模式</a>
+        {% if log_data %}
+        <div class="sensitive-log-list">
+            {% for date, records in log_data.items()|sort(reverse=True) %}
+            <div style="margin-bottom:18px;">
+                <div class="sensitive-log-date">{{ date }}</div>
+                <ul style="padding-left:18px;">
+                {% for record in records %}
+                    <li class="sensitive-log-item">
+                        <div class="sensitive-log-hit">命中词：{{ record.hit_words|join(', ') }}</div>
+                        <div class="sensitive-log-time">时间：{{ record.time }}</div>
+                        <div class="sensitive-log-context">{% for msg in record.context %}[{{ msg.role }}] {{ msg.content }}{% if not loop.last %}<br>{% endif %}{% endfor %}</div>
+                    </li>
+                {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="margin-top:32px;color:var(--text-secondary);">暂无敏感词触发记录。</div>
+        {% endif %}
+    </div>
+</body>
+</html>

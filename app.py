@@ -1,14 +1,16 @@
-from flask import Flask, request, jsonify, render_template, send_file
+from flask import Flask, request, jsonify, render_template, send_file, send_from_directory, session, redirect, url_for
 import asyncio
 import logging
 from datetime import datetime
 import os
 import tempfile
+import json
 
 # 导入服务模块
 from services import LLMService, TTSService, ASRService
 
 app = Flask(__name__)
+app.secret_key = 'parent_mode_secret_key'  # 用于session
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -19,10 +21,68 @@ llm_service = LLMService()
 tts_service = TTSService()
 asr_service = ASRService()
 
+# 添加静态文件路由
+@app.route('/static/live2d_models/<path:filename>')
+def serve_live2d_models(filename):
+    return send_from_directory('static/live2d_models', filename)
+
+# 添加favicon路由
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory('static', 'favicon.ico', mimetype='image/vnd.microsoft.icon')
+
+def get_time_limit():
+    try:
+        with open('time_limit.json', 'r', encoding='utf-8') as f:
+            return json.load(f).get('time_limit')
+    except Exception:
+        return None
+
+def set_time_limit(limit):
+    with open('time_limit.json', 'w', encoding='utf-8') as f:
+        json.dump({'time_limit': limit}, f)
+
+def get_today_used_minutes():
+    today = datetime.now().strftime('%Y-%m-%d')
+    try:
+        with open('usage_record.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return data.get(today, 0)
+    except Exception:
+        return 0
+
+def get_sensitive_words():
+    try:
+        with open('sensitive_words.json', 'r', encoding='utf-8') as f:
+            return json.load(f).get('words', [])
+    except Exception:
+        return []
+
+def record_sensitive_event(context):
+    from datetime import datetime
+    today = datetime.now().strftime('%Y-%m-%d')
+    try:
+        with open('sensitive_log.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    if today not in data:
+        data[today] = []
+    data[today].append(context)
+    with open('sensitive_log.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def set_sensitive_words(words):
+    with open('sensitive_words.json', 'w', encoding='utf-8') as f:
+        json.dump({'words': words}, f, ensure_ascii=False)
+
 @app.route('/')
 def index():
     """主页"""
-    return render_template('index.html')
+    time_limit = get_time_limit()
+    used_minutes = get_today_used_minutes()
+    remaining_minutes = time_limit - used_minutes if time_limit is not None else None
+    return render_template('index.html', remaining_minutes=remaining_minutes)
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -39,6 +99,18 @@ def chat():
         validation = llm_service.validate_config(provider, api_key, model)
         if not validation['valid']:
             return jsonify({'error': f"配置错误: {', '.join(validation['errors'])}"}), 400
+        
+        # 敏感词检测
+        sensitive_words = get_sensitive_words()
+        if sensitive_words:
+            context_text = '\n'.join([m.get('content', '') for m in messages])
+            hit = [w for w in sensitive_words if w and w in context_text]
+            if hit:
+                record_sensitive_event({
+                    'time': datetime.now().isoformat(),
+                    'hit_words': hit,
+                    'context': messages
+                })
         
         # 调用LLM服务
         response = llm_service.call_llm(
@@ -313,6 +385,82 @@ def clear_history():
     except Exception as e:
         logger.error(f"Clear history error: {str(e)}")
         return jsonify({'error': f'清空历史记录失败: {str(e)}'}), 500
+
+@app.route('/api/live2d_models')
+def get_live2d_models():
+    """获取所有可用的Live2D模型"""
+    try:
+        models_dir = os.path.join(app.static_folder, 'live2d_models')
+        models = []
+        for name in os.listdir(models_dir):
+            model_path = os.path.join(models_dir, name)
+            if os.path.isdir(model_path):
+                # 查找主模型json文件
+                for file in os.listdir(model_path):
+                    if file.endswith('.model3.json'):
+                        models.append({
+                            'name': name,
+                            'json': f'/static/live2d_models/{name}/{file}'
+                        })
+        
+        return jsonify(models)
+        
+    except Exception as e:
+        logger.error(f"Get Live2D models error: {str(e)}")
+        return jsonify({'error': f'获取Live2D模型失败: {str(e)}'}), 500
+
+@app.route('/parent_login', methods=['GET', 'POST'])
+def parent_login():
+    """家长模式登录页面和处理"""
+    error = None
+    if request.method == 'POST':
+        password = request.form.get('password')
+        if password == '123456':
+            session['parent_mode'] = True
+            return redirect(url_for('parent_dashboard'))
+        else:
+            error = '密码错误，请重试。'
+    return render_template('parent_login.html', error=error)
+
+@app.route('/set_time_limit', methods=['POST'])
+def set_time_limit_route():
+    if not session.get('parent_mode'):
+        return redirect(url_for('parent_login'))
+    try:
+        limit = int(request.form.get('time_limit'))
+        if 1 <= limit <= 600:
+            set_time_limit(limit)
+    except Exception:
+        pass
+    return redirect(url_for('parent_dashboard'))
+
+@app.route('/set_sensitive_words', methods=['POST'])
+def set_sensitive_words_route():
+    if not session.get('parent_mode'):
+        return redirect(url_for('parent_login'))
+    words = request.form.get('sensitive_words', '')
+    word_list = [w.strip() for w in words.split(',') if w.strip()]
+    set_sensitive_words(word_list)
+    return redirect(url_for('parent_dashboard'))
+
+@app.route('/parent_dashboard')
+def parent_dashboard():
+    if not session.get('parent_mode'):
+        return redirect(url_for('parent_login'))
+    time_limit = get_time_limit()
+    sensitive_words = get_sensitive_words()
+    return render_template('parent_dashboard.html', time_limit=time_limit, sensitive_words=sensitive_words)
+
+@app.route('/sensitive_log')
+def sensitive_log():
+    if not session.get('parent_mode'):
+        return redirect(url_for('parent_login'))
+    try:
+        with open('sensitive_log.json', 'r', encoding='utf-8') as f:
+            log_data = json.load(f)
+    except Exception:
+        log_data = {}
+    return render_template('sensitive_log.html', log_data=log_data)
 
 @app.errorhandler(404)
 def not_found(error):

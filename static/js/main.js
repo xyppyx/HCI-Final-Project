@@ -7,12 +7,15 @@ class VoiceAssistant {
         this.currentSession = null;
         this.settings = this.loadSettings();
         this.currentTab = 'history';
+
+        // Live2D 相关属性
+        this.live2dApp = null;
+        this.live2dModel = null;
         
         // 等待DOM加载完成
+        // 注意：这里的逻辑已经简化，避免重复初始化
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => {
-                this.initialize();
-            });
+            document.addEventListener('DOMContentLoaded', () => this.initialize());
         } else {
             this.initialize();
         }
@@ -25,6 +28,7 @@ class VoiceAssistant {
         this.updateSettingsUI();
         this.initializePanels();
         this.loadConversationSessions();
+        // 不再在这里初始化Live2D，等待下拉框选择后再加载
     }
 
     // 初始化DOM元素
@@ -38,6 +42,10 @@ class VoiceAssistant {
             recordingIndicator: document.getElementById('recordingIndicator'),
             loadingIndicator: document.getElementById('loadingIndicator'),
             
+            // --- 新增：Live2D 元素 ---
+            live2dCanvas: document.getElementById('live2d-canvas'),
+            live2dContainer: document.querySelector('.live2d-container'),
+
             // 面板控制
             leftPanel: document.querySelector('.left-panel'),
             rightPanel: document.querySelector('.right-panel'),
@@ -66,6 +74,155 @@ class VoiceAssistant {
                 console.error(`Required element not found: ${elementName}`);
             }
         });
+    }
+
+      // --- 新增：初始化 Live2D 的方法 ---
+    async initializeLive2D(modelPath) {
+        const canvas = this.elements.live2dCanvas;
+        const container = this.elements.live2dContainer;
+
+        if (!canvas || !container) {
+            console.error('Live2D canvas or container not found!');
+            return;
+        }
+
+        // 只初始化一次（如需强制切换模型，先销毁再初始化）
+        if (this.live2dApp && this.live2dModel) {
+            try {
+                this.live2dApp.stage.removeChild(this.live2dModel);
+                this.live2dModel.destroy();
+            } catch (e) { console.warn('销毁旧模型时出错', e); }
+            this.live2dModel = null;
+        }
+
+        // 初始化Pixi应用，并将其绑定到canvas
+        if (!this.live2dApp) {
+            this.live2dApp = new PIXI.Application({
+                view: canvas,
+                autoStart: true,
+                resizeTo: container,
+                backgroundAlpha: 0,
+            });
+        }
+
+        // 默认模型
+        if (!modelPath) {
+            modelPath = '/static/live2d_models/hiyori_free_t08/hiyori_free_t08.model3.json';
+        }
+
+        try {
+            this.live2dModel = await PIXI.live2d.Live2DModel.from(modelPath);
+            this.live2dApp.stage.addChild(this.live2dModel);
+
+            // 智能缩放函数
+            const resizeModel = () => {
+                const containerWidth = container.clientWidth;
+                const containerHeight = container.clientHeight;
+                if (!this.live2dModel || containerWidth === 0 || containerHeight === 0) return;
+                const scaleX = containerWidth / this.live2dModel.internalModel.width;
+                const scaleY = containerHeight / this.live2dModel.internalModel.height;
+                const scale = Math.min(scaleX, scaleY);
+                const padding = 1.0;
+                this.live2dModel.scale.set(scale * padding);
+                this.live2dModel.x = (containerWidth - this.live2dModel.width) / 2;
+                this.live2dModel.y = (containerHeight - this.live2dModel.height) / 2;
+                console.log('Live2D resize:', {
+                    containerWidth,
+                    containerHeight,
+                    modelWidth: this.live2dModel.internalModel.width,
+                    modelHeight: this.live2dModel.internalModel.height,
+                    scale: scale * padding,
+                    drawWidth: this.live2dModel.width,
+                    drawHeight: this.live2dModel.height,
+                    x: this.live2dModel.x,
+                    y: this.live2dModel.y
+                });
+            };
+
+            // 首次加载时调整一次
+            resizeModel();
+
+            // 用ResizeObserver监听容器尺寸变化
+            if (this.live2dResizeObserver) {
+                this.live2dResizeObserver.disconnect();
+            }
+            this.live2dResizeObserver = new ResizeObserver(() => {
+                resizeModel();
+            });
+            this.live2dResizeObserver.observe(container);
+
+            // 添加交互：点击模型时触发动作
+            this.live2dModel.on('hit', (hitAreas) => {
+                if (hitAreas.length > 0) {
+                    const motionIndex = Math.floor(Math.random() * 8);
+                    this.live2dModel.motion('', motionIndex);
+                }
+            });
+        } catch (error) {
+            console.error('Live2D模型处理失败:', error);
+            this.showNotification('Live2D模型加载失败，请检查文件路径或刷新页面', 'error');
+        }
+
+        // 动态生成动作按钮
+        await this.generateLive2dActionButtons(modelPath);
+    }
+
+    // --- 新增：重新初始化 Live2D 的方法 ---
+    async reinitializeLive2D() {
+        // 如果存在旧的模型，先清理
+        if (this.live2dModel) {
+            this.live2dApp.stage.removeChild(this.live2dModel);
+            this.live2dModel.destroy();
+        }
+        
+        // 如果存在旧的应用，先销毁
+        if (this.live2dApp) {
+            this.live2dApp.destroy(true);
+        }
+
+        // 重新初始化
+        await this.initializeLive2D();
+    }
+
+    // 销毁Live2D应用和模型，并移除canvas
+    destroyLive2D() {
+        if (this.live2dModel) {
+            try {
+                this.live2dApp.stage.removeChild(this.live2dModel);
+                this.live2dModel.destroy();
+            } catch (e) { console.warn('销毁模型时出错', e); }
+            this.live2dModel = null;
+        }
+        if (this.live2dApp) {
+            try {
+                this.live2dApp.destroy(true);
+            } catch (e) { console.warn('销毁Pixi应用时出错', e); }
+            this.live2dApp = null;
+        }
+        if (this.live2dResizeObserver) {
+            try {
+                this.live2dResizeObserver.disconnect();
+            } catch (e) {}
+            this.live2dResizeObserver = null;
+        }
+        // 移除canvas元素
+        if (this.elements.live2dCanvas && this.elements.live2dCanvas.parentNode) {
+            this.elements.live2dCanvas.parentNode.removeChild(this.elements.live2dCanvas);
+            this.elements.live2dCanvas = null;
+        }
+    }
+
+    // 展开时重建canvas并初始化Live2D
+    recreateLive2dCanvas() {
+        const container = this.elements.live2dContainer;
+        if (!container) return;
+        // 创建新canvas
+        const newCanvas = document.createElement('canvas');
+        newCanvas.id = 'live2d-canvas';
+        newCanvas.style.width = '100%';
+        newCanvas.style.height = '100%';
+        container.appendChild(newCanvas);
+        this.elements.live2dCanvas = newCanvas;
     }
 
     // 初始化事件监听器
@@ -101,9 +258,6 @@ class VoiceAssistant {
             }
 
             // 面板折叠事件
-            if (this.elements.toggleLeftPanel) {
-                this.elements.toggleLeftPanel.addEventListener('click', () => this.toggleLeftPanel());
-            }
             if (this.elements.toggleRightPanel) {
                 this.elements.toggleRightPanel.addEventListener('click', () => this.toggleRightPanel());
             }
@@ -135,10 +289,64 @@ class VoiceAssistant {
             // 设置相关事件
             this.initializeSettingsEvents();
 
+            // 自定义动作菜单事件
+            const actionBtns = document.querySelectorAll('.action-btn');
+            actionBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const motion = btn.getAttribute('data-motion');
+                    this.playLive2dMotion(motion);
+                });
+            });
+
+            // 静态Live2D动作按钮事件绑定
+            const staticActionBtns = document.querySelectorAll('#live2dSettingsGroup .live2d-actions .action-btn');
+            staticActionBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const motion = btn.getAttribute('data-motion');
+                    this.playLive2dMotion(motion);
+                });
+            });
+
             console.log('所有事件监听器已初始化');
 
         } catch (error) {
             console.error('初始化事件监听器时出错:', error);
+        }
+    }
+
+    // 动态生成动作按钮（只操作右侧设置区的.live2d-actions）
+    async generateLive2dActionButtons(modelPath) {
+        try {
+            const res = await fetch(modelPath);
+            const data = await res.json();
+            const motions = data.Motions || {};
+            // 只选右侧设置区的.live2d-actions
+            const actionsDiv = document.querySelector('#live2dSettingsGroup .live2d-actions');
+            if (!actionsDiv) return;
+            actionsDiv.innerHTML = '';
+            Object.keys(motions).forEach(motionName => {
+                const btn = document.createElement('button');
+                btn.className = 'action-btn';
+                btn.textContent = motionName;
+                btn.setAttribute('data-motion', motionName);
+                btn.setAttribute('data-motion-index', 0);
+                btn.addEventListener('click', () => {
+                    this.playLive2dMotion(motionName, 0);
+                });
+                actionsDiv.appendChild(btn);
+            });
+        } catch (e) {
+            console.warn('自动生成动作按钮失败', e);
+        }
+    }
+
+    // 支持传入动作名和索引
+    playLive2dMotion(motion, index = 0) {
+        if (!this.live2dModel) return;
+        try {
+            this.live2dModel.motion && this.live2dModel.motion(motion, index);
+        } catch (e) {
+            console.warn('触发动作失败', e);
         }
     }
 
@@ -201,7 +409,7 @@ class VoiceAssistant {
         const groupHeaders = document.querySelectorAll('.group-header');
         groupHeaders.forEach(header => {
             header.addEventListener('click', () => {
-                const groupId = header.getAttribute('onclick')?.match(/toggleGroup\('(.+)'\)/)?.[1];
+                const groupId = header.getAttribute('onclick')?.match(/toggleGroup$'(.+)'$/)?.[1];
                 if (groupId) {
                     this.toggleGroup(groupId);
                 }
@@ -241,22 +449,6 @@ class VoiceAssistant {
         }
     }
 
-    // 切换左侧面板
-    toggleLeftPanel() {
-        const isCollapsed = this.elements.leftPanel.classList.toggle('collapsed');
-        this.elements.toggleLeftPanel.textContent = isCollapsed ? '▶' : '◀';
-        
-        const appContainer = document.querySelector('.app-container');
-        if (appContainer) {
-            appContainer.classList.toggle('left-collapsed', isCollapsed);
-        }
-        
-        // 保存状态
-        const panelStates = JSON.parse(localStorage.getItem('panelStates') || '{}');
-        panelStates.leftCollapsed = isCollapsed;
-        localStorage.setItem('panelStates', JSON.stringify(panelStates));
-    }
-
     // 切换右侧面板
     toggleRightPanel() {
         const isCollapsed = this.elements.rightPanel.classList.toggle('collapsed');
@@ -277,17 +469,18 @@ class VoiceAssistant {
     initializePanels() {
         const panelStates = JSON.parse(localStorage.getItem('panelStates') || '{}');
         const appContainer = document.querySelector('.app-container');
-        
-        if (panelStates.leftCollapsed && this.elements.leftPanel) {
-            this.elements.leftPanel.classList.add('collapsed');
-            if (this.elements.toggleLeftPanel) {
-                this.elements.toggleLeftPanel.textContent = '▶';
-            }
-            if (appContainer) {
-                appContainer.classList.add('left-collapsed');
-            }
+        // 强制显示左侧面板和live2d容器
+        if (this.elements.leftPanel) {
+            this.elements.leftPanel.classList.remove('collapsed');
         }
-        
+        if (this.elements.live2dContainer) {
+            this.elements.live2dContainer.style.display = '';
+            this.elements.live2dContainer.style.visibility = 'visible';
+        }
+        if (this.elements.toggleLeftPanel) {
+            this.elements.toggleLeftPanel.style.display = 'none';
+        }
+        // 右侧面板逻辑不变
         if (panelStates.rightCollapsed && this.elements.rightPanel) {
             this.elements.rightPanel.classList.add('collapsed');
             if (this.elements.toggleRightPanel) {
@@ -1018,14 +1211,87 @@ function toggleGroup(groupId) {
     }
 }
 
-// 初始化应用
+// 初始化应用 (已清理，避免重复初始化)
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM加载完成，初始化语音助手...');
-    window.voiceAssistant = new VoiceAssistant();
-});
+    // 确保 voiceAssistant 实例只创建一次
+    if (!window.voiceAssistant) {
+        console.log('DOM加载完成，初始化语音助手...');
+        window.voiceAssistant = new VoiceAssistant();
+    }
 
-// 如果DOM已经加载完成
-if (document.readyState !== 'loading') {
-    console.log('DOM已加载，直接初始化语音助手...');
-    window.voiceAssistant = new VoiceAssistant();
-}
+    // 页面加载时请求模型列表并填充下拉框
+    window.addEventListener('DOMContentLoaded', () => {
+        fetch('/api/live2d_models')
+            .then(res => res.json())
+            .then(models => {
+                const select = document.getElementById('live2dModelSelect');
+                if (!select) return;
+                select.innerHTML = '';
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.json;
+                    option.textContent = model.name;
+                    select.appendChild(option);
+                });
+                // 默认选中第一个并加载（不再自动加载默认hiyori）
+                if (models.length > 0 && window.voiceAssistant) {
+                    // 只设置下拉框选中项，不主动加载模型，等待change事件触发
+                    select.value = models[0].json;
+                    window.voiceAssistant.initializeLive2D(models[0].json);
+                }
+            });
+        // 监听选择切换
+        const select = document.getElementById('live2dModelSelect');
+        if (select) {
+            select.addEventListener('change', function() {
+                if (window.voiceAssistant) {
+                    window.voiceAssistant.initializeLive2D(this.value);
+                }
+            });
+        }
+    });
+
+    (function() {
+        // 只要点击live2d画布（不点到模型），就触发随机动作
+        var canvas = document.getElementById('live2d-canvas');
+        if (!canvas) return;
+        canvas.addEventListener('click', function(e) {
+            // 判断是否点到透明区域（即不是模型），这里直接全部canvas都触发
+            if (window.L2Dwidget && typeof window.L2Dwidget.motion === 'function') {
+                // 如果有官方widget接口
+                window.L2Dwidget.motion('random');
+            } else if (window.app && window.app.models && window.app.models[0] && typeof window.app.models[0].motionManager === 'object') {
+                // Pixi+Live2D常见写法
+                var model = window.app.models[0];
+                var motions = model.internalModel && model.internalModel.motionManager && model.internalModel.motionManager._definitions;
+                if (motions) {
+                    var groups = Object.keys(motions);
+                    if (groups.length > 0) {
+                        var group = groups[Math.floor(Math.random() * groups.length)];
+                        var arr = motions[group];
+                        if (arr && arr.length > 0) {
+                            var idx = Math.floor(Math.random() * arr.length);
+                            model.motion(group, idx);
+                        }
+                    }
+                }
+            } else if (window.live2dModel && typeof window.live2dModel.startRandomMotion === 'function') {
+                window.live2dModel.startRandomMotion();
+            } else {
+                // 兼容自定义live2d实现
+                if (window.randomLive2dMotion) window.randomLive2dMotion();
+            }
+        });
+    })();
+
+    // 系统使用说明弹窗逻辑
+    (function(){
+        var btn = document.getElementById('usageGuideBtn');
+        var modal = document.getElementById('usageGuideModal');
+        if(btn && modal) {
+            btn.addEventListener('click', function(){
+                modal.style.display = 'flex';
+            });
+        }
+    })();
+});
