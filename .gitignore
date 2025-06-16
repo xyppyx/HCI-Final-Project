@@ -120,3 +120,8 @@ static/live2d_models/芊芊/芊芊.4096/texture_01.png
 static/live2d_models/芊芊/芊芊.4096/texture_02.png
 static/live2d_models/芊芊/芊芊.4096/texture_03.png
 static/live2d_models/芊芊/芊芊.4096/texture_04.png
+time_limit.json
+services/__pycache__/__init__.cpython-311.pyc
+services/__pycache__/asr_service.cpython-311.pyc
+services/__pycache__/llm_service.cpython-311.pyc
+services/__pycache__/tts_service.cpython-311.pyc
