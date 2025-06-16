@@ -51,7 +51,7 @@
             </div>
             {% if remaining_minutes is not none %}
             <div class="time-remaining-info" style="margin: 0 0 18px 0; text-align: right; color: var(--primary-color); font-size: 1.08rem;">
-                今日剩余可用时长：<span id="remainingTime">{{ remaining_minutes }}</span> 分钟
+                今日剩余可用时长：<span id="remainingTime">{{ remaining_minutes }}</span>    
             </div>
             {% endif %}
             
@@ -202,12 +202,12 @@
                                 <div class="setting-item">
                                     <label>语速:</label>
                                     <input type="range" id="speechRate" min="0.5" max="2" step="0.1" value="1.0">
-                                    <span id="rateValue">1.0</span>
+                                    <span id="speechRateValue">1.0</span>
                                 </div>
                                 <div class="setting-item">
                                     <label>音量:</label>
                                     <input type="range" id="speechVolume" min="0.5" max="1.5" step="0.1" value="1.0">
-                                    <span id="volumeValue">1.0</span>
+                                    <span id="speechVolumeValue">1.0</span>
                                 </div>
                                 <div class="setting-item">
                                     <label>启用TTS:</label>
@@ -240,7 +240,7 @@
                                 <div class="setting-item">
                                     <label>灵敏度:</label>
                                     <input type="range" id="asrSensitivity" min="1" max="10" step="1" value="5">
-                                    <span id="sensitivityValue">5</span>
+                                    <span id="asrSensitivityValue">5</span>
                                 </div>
                             </div>
                         </div>
